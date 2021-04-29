@@ -18,14 +18,17 @@ resourcestring                                     {english}
   hntCap='Show also remaining capacity in chart';
   rsManual='readme_en.txt';
 
-  rsVType='Vehicle type:    ';
-  rsZeit= 'Begin time:      ';
-  rsEZeit='End time:        ';
-  rsCells='Number cells:    ';
-  rsFDur= 'Flight time:     ';
-  rsVmin= 'Minimum voltage: ';
-  rsQuali='Battery quality: ';
-  rsTief= '                  Note: Voltage drop!';
+  rsVType= 'Vehicle type:    ';
+  rsZeit=  'Begin time:      ';
+  rsEZeit= 'End time:        ';
+  rsCells= 'Number cells:    ';
+  rsFDur=  'Flight time:     ';
+  rsVmin=  'Minimum voltage: ';
+  rsQuali= 'Battery quality: ';
+  rsTief=  '                 Note: Voltage drop!';
+  rsHVLiPo='                 HV-LiPo';
+  rsVW1=   '                 Voltage warning 1 raised';
+  rsVW2=   '                 Voltage warning 2 raised';
   rsBwert1='Good';
   rsBwert2='Needs observation';
   rsBwert3='Critical';

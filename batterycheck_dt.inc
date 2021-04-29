@@ -18,14 +18,17 @@ resourcestring                                     {deutsch}
   hntCap='Restkapazität auch anzeigen';
   rsManual='readme_de.txt';
 
-  rsVType='Kopter Typ:       ';
-  rsZeit= 'Beginnzeit:       ';
-  rsEZeit='Endezeit:         ';
-  rsCells='Anzahl Zellen:    ';
-  rsFDur= 'Flugzeit etwa:    ';
-  rsVmin= 'Spannungsminimum: ';
-  rsQuali='Batteriezustand:  ';
-  rsTief= '                   Achtung: Unterspannung!';
+  rsVType= 'Kopter Typ:       ';
+  rsZeit=  'Beginnzeit:       ';
+  rsEZeit= 'Endezeit:         ';
+  rsCells= 'Anzahl Zellen:    ';
+  rsFDur=  'Flugzeit etwa:    ';
+  rsVmin=  'Spannungsminimum: ';
+  rsQuali= 'Batteriezustand:  ';
+  rsTief=  '                  Achtung: Unterspannung!';
+  rsHVLiPo='                  HV-LiPo';
+  rsVW1=   '                  Voltage warning 1 ausgegeben';
+  rsVW2=   '                  Voltage warning 2 ausgegeben';
   rsBwert1='Gut';
   rsBwert2='Beobachten';
   rsBwert3='Bedenklich';

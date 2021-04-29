@@ -85,6 +85,9 @@ type
     btnClose: TBitBtn;
     btnOpen: TBitBtn;
     Chart1: TChart;
+    lineUmin: TConstantLine;
+    lineVW1: TConstantLine;
+    lineVW2: TConstantLine;
     ChartAxisTransformations1AutoScaleAxisTransform1: TAutoScaleAxisTransform;
     ChartAxisTransformations2AutoScaleAxisTransform1: TAutoScaleAxisTransform;
     cbCap: TCheckBox;
@@ -202,7 +205,7 @@ begin
   txtProtocol.Lines.Add(fn);
   if FileExists(fn) then
     txtProtocol.Lines.LoadFromFile(fn);
-  VSerie.SeriesColor:=clRed;
+  VSerie.SeriesColor:=clNavy;
   CSerie.SeriesColor:=clFuchsia;
   Chart1.AxisList[0].Title.LabelFont.Color:=VSerie.SeriesColor;
   Chart1.AxisList[2].Title.LabelFont.Color:=CSerie.SeriesColor;
@@ -575,7 +578,7 @@ var
   cv: double;
 const
   swchrg=3.9;                                        {Batt charged, V per cell}
-  swmtt=3.8;                                         {Threshold, V per cell}
+  swmtt=3.75;                                        {Threshold, V per cell}
 
 begin
   cv:=m.v/m.nc;                                      {cell voltage}
@@ -622,15 +625,6 @@ var
 
   procedure BattCheck;
   begin
-    qw1:=400;
-    qw2:=100;
-    qw3:=50;
-    w:=round((mx.tt-mx.td)*sperd);                   {Numerischer Wert für Güte}
-    if mx.vmax>(lipomax+0.05) then begin             {High voltage LiPo}
-      qw1:=600;
-      qw2:=120;
-      qw3:=75;
-    end;
     if w>qw1 then begin
       Panel2.Color:=clGreen;
       olist.Add(rsQuali+rsBwert1);
@@ -658,7 +652,22 @@ var
 begin
   if seg then
     olist.Add(rsSegm+' # '+IntToStr(mx.segm));       {Segmentnummer ausgeben, wenn mehr als eins}
+  qw1:=400;
+  qw2:=100;
+  qw3:=30;
+  w:=round((mx.tt-mx.td)*sperd);                     {Numerischer Wert für Güte}
+  if mx.vmax>(lipomax+0.05) then begin               {High voltage LiPo}
+    qw1:=600;
+    qw2:=120;
+    qw3:=75;
+    olist.Add(rsHVLiPo);
+  end;
   olist.Add(rsVmin+FormatFloat('0.0', mx.vmin)+'V');
+  if lineVW2.Active then
+    olist.Add(rsVW2)
+  else
+    if lineVW1.Active then
+      olist.Add(rsVW1);
   if mx.vmin<(lipomin*mx.nc) then
     olist.Add(rsTief);
   if mx.flt then begin
@@ -758,6 +767,7 @@ begin
       if InFlight(7, fm) then
         mp.flt:=true;
     end;
+    lineUmin.Position:=lipomin*3;
     txtProtocol.Lines.Add(rsEZeit+FormatDateTime(vzf, mp.t));
     txtProtocol.Lines.Add('');
     if not mp.flt then
@@ -800,6 +810,7 @@ begin
       end;
       mpAnalyse(mp, pmp);
     end;
+    lineUmin.Position:=lipomin*2;         {2S}
     txtProtocol.Lines.Add(rsEZeit+FormatDateTime(zzf, mp.t));
     txtProtocol.Lines.Add('');
 
@@ -820,7 +831,7 @@ procedure TForm1.YuneecLegacy(logdat: TMemoryStream; const m: integer);
 var
   inlist, outlist: TStringList;
   sar: TStringArray;
-  i, vt, pfm, fm: integer;
+  i, vt, pfm, fm, ef: integer;
   mp, pmp: TMesspkt;
 
 begin
@@ -876,24 +887,37 @@ begin
         end;
       end else begin                                 {Yuneec legacy}
         mp.v:=StrToFloatDef(sar[2], 5);
+        ef:=StrToIntDef(sar[pfm+3], 0);              {Error flags}
         case rgBatt.ItemIndex of
           0: mp.c:=VtoProzY(mp);
           1: mp.c:=VtoProzRC(mp);
         end;
-        if InFlight(vt, fm) then
-            mp.flt:=true;
+        if InFlight(vt, fm) then begin
+          mp.flt:=true;
+          if ((ef and 1)=1) and
+             (lineVW1.Active=false) then begin       {Voltage Warning 1}
+            lineVW1.Position:=mp.t;
+            lineVW1.Active:=true;
+          end;
+          if ((ef and 2)=2) and
+             (lineVW2.Active=false) then begin       {Voltage Warning 2}
+            lineVW2.Position:=mp.t;
+            lineVW2.Active:=true;
+          end;
+        end;
       end;
 
       if mp.v>5 then begin
         MPanalyse(mp, pmp);
         pmp:=mp;
         if (mp.pid=3) and
-          (mp.v>mp.vmax*swdis*mp.nc) then begin     {Begin to decharge detected}
+          (mp.v>mp.vmax*swdis*mp.nc) then begin      {Begin to decharge detected}
           mp.segm:=mp.segm+1;
         end;
       end;
     end;
 
+    lineUmin.Position:=lipomin*mp.nc;
     txtProtocol.Lines.Add(rsEZeit+FormatDateTime(vzf, mp.t));
     txtProtocol.Lines.Add('');
     if outlist.count=0 then                          {Only one segment}
@@ -1049,6 +1073,7 @@ begin
         end;
       end;
     end;
+    lineUmin.Position:=lipomin*mp.nc;
     txtProtocol.Lines.Add('');
     txtProtocol.Lines.Add(rsVType+MAVtypeToStr(mavtype));
     txtProtocol.Lines.Add(rsCells+IntToStr(mp.nc)+'S');
@@ -1095,6 +1120,9 @@ begin
     DefaultFormatSettings.DecimalSeparator:='.';     {Yuneec Format}
     VSerie.Clear;
     CSerie.Clear;
+    lineUmin.Active:=false;
+    lineVW1.Active:=false;
+    lineVW2.Active:=false;
 
     try
       logf.LoadFromFile(fn);
@@ -1107,6 +1135,8 @@ begin
         8: MAVmsg(logf);
         9: H501Dats(logf);
       end;
+      if vtf>0 then
+        lineUmin.Active:=true;
 
     finally
       DefaultFormatSettings.DecimalSeparator:=ddl;   {Original wiederherstellen}

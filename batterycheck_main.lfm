@@ -157,6 +157,24 @@ object Form1: TForm1
       AxisIndexY = 2
       LinePen.Color = clFuchsia
     end
+    object lineUmin: TConstantLine
+      Active = False
+      AxisIndex = 0
+      Pen.Color = clRed
+    end
+    object lineVW1: TConstantLine
+      Active = False
+      AxisIndex = 1
+      LineStyle = lsVertical
+      Pen.Color = clSkyBlue
+      Pen.Width = 2
+    end
+    object lineVW2: TConstantLine
+      Active = False
+      LineStyle = lsVertical
+      Pen.Color = clBlue
+      Pen.Width = 2
+    end
   end
   object Splitter: TSplitter
     Cursor = crVSplit

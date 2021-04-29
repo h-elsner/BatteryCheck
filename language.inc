@@ -1,6 +1,6 @@
 
-{$I batterycheck_dt.inc}
-{.$I batterycheck_en.inc}
+{.$I batterycheck_dt.inc}
+{$I batterycheck_en.inc}
 
 resourcestring                                     {Länderneutral}
 
