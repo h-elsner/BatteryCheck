@@ -133,7 +133,7 @@ type
     procedure YuneecLegacy(logdat: TMemoryStream; const m: integer);
     procedure BreezeDats(logdat: TMemoryStream);     {Breeze}
     procedure H501Dats(logdat: TMemoryStream);       {Hubsan, mode 9}
-    procedure MAVmsg(const logdat: TMemoryStream);     {TLOG, Sensor, Mantis}
+    procedure MAVmsg(const logdat: TMemoryStream);   {TLOG, Sensor, Mantis}
     procedure MPanalyse(var m, malt: TMesspkt);      {Kurvenanalyse Spannung}
     procedure Bewertung(mx: TMessPkt; var olist: TStringList; seg: boolean=false);
   public
@@ -143,11 +143,11 @@ type
 
 var
   Form1: TForm1;
-  dbg: Boolean;
+  dbg: Boolean;                                      {Debug flag}
 
 const
   meinname='Helmut Elsner';
-  email   ='helmut.elsner@live.com';               {My e-mail address}
+  email   ='helmut.elsner@live.com';                 {My e-mail address}
   homepage='http://h-elsner.mooo.com/';
 
   logminsize=10240;
@@ -165,6 +165,7 @@ const
 
   lipomin=3.3;                                       {Minimum LiPo voltage}
   lipomax=4.2;
+  hvlipomax=4.25;
   swdis=0.98;                                        {Discharge start, % from Vmax}
   vxw=999;                                           {unsinnig hoher Wert}
 
@@ -467,6 +468,10 @@ begin
     0:  result:='Generic';
     1:  result:='Fixed wing';
     2:  result:='QuadRotor (Mantis Q/G)';
+    3:  result:='Coaxial helicopter';
+    4:  result:='Helicopter';
+    7:  result:='Airship';
+    10: result:='Ground rover';
     13: result:='HexRotor (H520, H+, H3)';
     14: result:='OctoRotor';
     15: Result:='Tricopter';
@@ -656,7 +661,7 @@ begin
   qw2:=100;
   qw3:=30;
   w:=round((mx.tt-mx.td)*sperd);                     {Numerischer Wert für Güte}
-  if mx.vmax>(lipomax+0.05) then begin               {High voltage LiPo}
+  if mx.vmax>(hvlipomax) then begin                  {High voltage LiPo}
     qw1:=600;
     qw2:=120;
     qw3:=75;
