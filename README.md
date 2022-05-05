@@ -7,6 +7,8 @@ This tool should simplify that.
 
 To see the voltage history, you have to load the telemetry data from the flight. This can be TLOG files, telemetry CSV files or the corresponding pedants at Mantis Q or Breeze. The program can handle all common telemetry data from Yuneec copters, as well as from the Blade Chroma or 350QX (if they are controlled with the ST10).
 
+![Examples](Docs/2021-04-03 23-06-45en.png)
+
 In the attached screenshot we see the evaluation of a TLOG file from the H520, which contains three flights with three different batteries, here called segments of the file.
 Segment 1 shows the typical course of a good battrie with long flight time and low voltage dip.
 Segment 2 shows an aged battery, which should be inspected continuously.
