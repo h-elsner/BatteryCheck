@@ -10,6 +10,6 @@ To see the voltage history, you have to load the telemetry data from the flight.
 ![Examples](Examples_en.png)
 
 In the attached screenshot we see the evaluation of a TLOG file from the H520, which contains three flights with three different batteries, here called segments of the file.
-Segment 1 shows the typical course of a good battrie with long flight time and low voltage dip.
+Segment 1 shows the typical chart of a good battery with long flight time and low voltage dip.
 Segment 2 shows an aged battery, which should be inspected continuously.
-Segment 3 shows a defective or at least very old battery that belongs in the scrap. This battery actually caused a crash.
+Segment 3 shows a defective or at least very old battery that belongs to the waste basket. This battery actually caused a crash.
