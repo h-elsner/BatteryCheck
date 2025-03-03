@@ -1,17 +1,17 @@
-{********************************************************}
-{                                                        }
-{          Batterie Check für Yuneec Kopter              }
-{                                                        }
-{          Copyright (c) 2021   Helmut Elsner            }
-{                                                        }
-{       Compiler: FPC 3.2.0  /    Lazarus 2.0.12         }
-{                                                        }
-{ Pascal programmers tend to plan ahead, they think      }
-{ before they type. We type a lot because of Pascal      }
-{ verboseness, but usually our code is right from the    }
-{ start. We end up typing less because we fix less bugs. }
-{           [Jorge Aldo G. de F. Junior]                 }
-{********************************************************}
+          {********************************************************}
+          {                                                        }
+          {          Batterie Check für Yuneec Kopter              }
+          {                                                        }
+          {        Copyright (c) 2021-2022   Helmut Elsner         }
+          {                                                        }
+          {       Compiler: FPC 3.2.2  /    Lazarus 2.2.0          }
+          {                                                        }
+          { Pascal programmers tend to plan ahead, they think      }
+          { before they type. We type a lot because of Pascal      }
+          { verboseness, but usually our code is right from the    }
+          { start. We end up typing less because we fix less bugs. }
+          {           [Jorge Aldo G. de F. Junior]                 }
+          {********************************************************}
 
 (*
 This source is free software; you can redistribute it and/or modify it under
@@ -42,6 +42,21 @@ Supported file formats:
 - Yuneec Breeze log files
 - Telemetry files from Blade Chroma and 350QX
 
+
+Selbstdefiniertes Format (ToDo)
+Zeilen und Spalten beginnen mit 0
+Beispiel: Q500
+-----------------------+-----------------------------
+,                       Datenseparator
+.                       Decimalseparator
+1                       Zeilennummer Daten
+24                      Anzahl Spalten (Plausicheck)
+yyyymmdd hh:nn:ss:zzz   Zeitformat
+0                       Spaltenindex Zeitstempel
+3                       Anzahl Batteriezellen
+1                       Faktor
+2                       Spaltenindex Spannung
+
 *)
 
 unit batterycheck_main;
@@ -54,7 +69,7 @@ uses
   Classes, SysUtils, Forms, Controls, Graphics, Dialogs, XMLPropStorage, Menus,
   ExtCtrls, Buttons, ActnList, StdCtrls, TAGraph, TATransformations,
   TAIntervalSources, TATools, TASeries, fileutil, DateUtils, math, LCLIntf,
-  ComCtrls;
+  ComCtrls, Types;
 
 type
 
@@ -94,8 +109,8 @@ type
     ChartToolset1PanDragTool1: TPanDragTool;
     ChartToolset1ZoomMouseWheelTool1: TZoomMouseWheelTool;
     Panel2: TPanel;
-    VSerie: TLineSeries;
-    CSerie: TLineSeries;
+    VoltSerie: TLineSeries;
+    CapacitySerie: TLineSeries;
     ChartAxisTransformations1: TChartAxisTransformations;
     ChartAxisTransformations2: TChartAxisTransformations;
     ChartToolset1: TChartToolset;
@@ -104,7 +119,7 @@ type
     MainMenu1: TMainMenu;
     rgBatt: TRadioGroup;
     Splitter: TSplitter;
-    txtProtocol: TMemo;
+    mmoProtocol: TMemo;
     mnAbout: TMenuItem;
     N2: TMenuItem;
     mnHomePage: TMenuItem;
@@ -123,7 +138,12 @@ type
     procedure Chart1MouseUp(Sender: TObject; Button: TMouseButton;
       Shift: TShiftState; X, Y: Integer);
     procedure FormCreate(Sender: TObject);
+    procedure FormDropFiles(Sender: TObject; const FileNames: array of string);
     procedure FormKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState);
+    procedure mmoProtocolMouseWheelDown(Sender: TObject; Shift: TShiftState;
+      MousePos: TPoint; var Handled: Boolean);
+    procedure mmoProtocolMouseWheelUp(Sender: TObject; Shift: TShiftState;
+      MousePos: TPoint; var Handled: Boolean);
     procedure mnAboutClick(Sender: TObject);
     procedure mnHomePageClick(Sender: TObject);
     procedure mnSaveClick(Sender: TObject);
@@ -136,6 +156,7 @@ type
     procedure MAVmsg(const logdat: TMemoryStream);   {TLOG, Sensor, Mantis}
     procedure MPanalyse(var m, malt: TMesspkt);      {Kurvenanalyse Spannung}
     procedure Bewertung(mx: TMessPkt; var olist: TStringList; seg: boolean=false);
+    procedure SelfDef(logdat: TMemoryStream);        {Frei definiertes Format}
   public
 
   end;
@@ -150,9 +171,11 @@ const
   email   ='helmut.elsner@live.com';                 {My e-mail address}
   homepage='http://h-elsner.mooo.com/';
 
+  fdefs='FormatDefs.txt';
+
   logminsize=10240;
   checksize=2047;
-  MAVrecID=$FD;
+  MagicFD=$FD;
   lenfixP=20;
   lenfix=8;
   zzf='hh:nn:ss';
@@ -201,18 +224,30 @@ begin
   rgBatt.Hint:=hntBatt;
   cbCap.Caption:=capCap;
   cbCap.Hint:=hntCap;
-  txtProtocol.Lines.Clear;
+  mmoProtocol.Lines.Clear;
   fn:=Application.Location+rsManual;
-  txtProtocol.Lines.Add(fn);
+  mmoProtocol.Lines.Add(fn);
   if FileExists(fn) then
-    txtProtocol.Lines.LoadFromFile(fn);
-  VSerie.SeriesColor:=clNavy;
-  CSerie.SeriesColor:=clFuchsia;
-  Chart1.AxisList[0].Title.LabelFont.Color:=VSerie.SeriesColor;
-  Chart1.AxisList[2].Title.LabelFont.Color:=CSerie.SeriesColor;
+    mmoProtocol.Lines.LoadFromFile(fn);
+  VoltSerie.SeriesColor:=clNavy;
+  CapacitySerie.SeriesColor:=clFuchsia;
+  Chart1.AxisList[0].Title.LabelFont.Color:=VoltSerie.SeriesColor;
+  Chart1.AxisList[2].Title.LabelFont.Color:=CapacitySerie.SeriesColor;
   Chart1.AxisList[0].Title.Caption:=capVolt+tab1+'[V]';
   Chart1.AxisList[2].Title.Caption:=capCap+tab1+'[%]';
   Chart1.ZoomFull;
+end;
+
+procedure TForm1.FormDropFiles(Sender: TObject; const FileNames: array of string);
+begin
+  Application.BringToFront;
+  rgBatt.Enabled:=true;
+  cbCap.Enabled:=true;
+  Panel2.Color:=Panel1.Color;
+  Panel2.Caption:='';
+  dbg:=false;
+  OpenDialog.FileName:=FileNames[0];
+  Zeichnen(FileNames[0]);
 end;
 
 procedure TForm1.FormKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState);
@@ -223,6 +258,22 @@ begin                                                {Debug version just to chec
       if OpenDialog.FileName<>'' then
         Zeichnen(OpenDialog.FileName);
     end;
+  end;
+end;
+
+procedure TForm1.mmoProtocolMouseWheelDown(Sender: TObject; Shift: TShiftState;
+  MousePos: TPoint; var Handled: Boolean);
+begin
+  if ssCtrl in Shift then begin
+    mmoProtocol.Font.Size:=mmoProtocol.Font.Size-1;
+  end;
+end;
+
+procedure TForm1.mmoProtocolMouseWheelUp(Sender: TObject; Shift: TShiftState;
+  MousePos: TPoint; var Handled: Boolean);
+begin
+  if ssCtrl in Shift then begin
+    mmoProtocol.Font.Size:=mmoProtocol.Font.Size+1;
   end;
 end;
 
@@ -249,6 +300,7 @@ begin
     4: result:='Blade Chroma (380QX)';
     5: result:='Yuneec Typhoon H';
     8: result:='PX4 TLOG (Mantis, H520, H+ Sensor';
+    99: result:=fdefs;
   end;
 end;
 
@@ -506,7 +558,7 @@ function CheckFileType(logdat: TMemoryStream): integer;  {Ermitteln des Dateifor
 var
   buf: array[0..checksize] of byte;                  {Search in the first 1 kByte}
   rawstr: string;
-  i, p, len, zhl: integer;
+  i, len, zhl: integer;
 
 begin
   result:=0;                                         {unbekannt}
@@ -541,25 +593,16 @@ begin
       exit;
     end;
 
-    p:=0;
     zhl:=0;
-    while p<(checksize-256) do begin                 {Prüfen ob MAVlink}
-      len:=0;
-      while (buf[p]<>MAVrecID) and
-            (p<checksize) do                         {Suche Anfang Message}
-        inc(p);
-      len:=buf[p+1];
-      if (p+len)<(checksize-len) then begin          {Mehr als eine MAVmsg im Buffer}
-        p:=p+lenfixP+len;
-        if buf[p]=MAVrecID then
-          inc(zhl);                                  {Zähle gültige Messages}
-      end;
+    for i:=0 to checksize do begin
+      if buf[i]=MagicFD then
+        inc(zhl);
     end;
-    if zhl>6 then
+    if zhl>20 then
       result:=8;
 
   except
-    {ignore, result remains 0}
+    exit(0);
   end;
 end;
 
@@ -617,11 +660,11 @@ begin
     m.flt:=false;
   end;
 
-  VSerie.AddXY(m.t, m.v);                            {Voltage}
+  VoltSerie.AddXY(m.t, m.v);                            {Voltage}
   if dbg then
-    CSerie.AddXY(m.t, m.pid)                         {Debugging: PID}
+    CapacitySerie.AddXY(m.t, m.pid)                         {Debugging: PID}
   else
-    CSerie.AddXY(m.t, m.c);                          {Remaining capacity}
+    CapacitySerie.AddXY(m.t, m.c);                          {Remaining capacity}
 end;
 
 procedure TForm1.Bewertung(mx: TMessPkt; var olist: TStringList; seg: boolean=false);
@@ -691,7 +734,7 @@ end;
 
 procedure TForm1.cbCapClick(Sender: TObject);        {Kapazität anzeigen}
 begin
-  CSerie.Active:=cbCap.Checked;
+  CapacitySerie.Active:=cbCap.Checked;
 end;
 
 procedure TForm1.Chart1MouseUp(Sender: TObject; Button: TMouseButton;  {Reset Zoom}
@@ -728,11 +771,11 @@ var
 begin
   if OpenDialog.FileName<>'' then begin
     fn:=ChangeFileExt(OpenDialog.Filename, '')+'BT.txt';
-    txtProtocol.Lines.SaveToFile(fn);
+    mmoProtocol.Lines.SaveToFile(fn);
     fn:=ChangeFileExt(OpenDialog.Filename, '')+'BT.png';
     Chart1.SaveToFile(TPortableNetworkGraphic, fn);
-    txtProtocol.Lines.Add(LineEnding);
-    txtProtocol.Lines.Add(rsSavedTo+ChangeFileExt(fn, '.*'));
+    mmoProtocol.Lines.Add(LineEnding);
+    mmoProtocol.Lines.Add(rsSavedTo+ChangeFileExt(fn, '.*'));
   end;
 end;
 
@@ -752,33 +795,106 @@ var
 
 begin
   inlist:=TStringList.Create;
-  CSerie.Active:=true;
-  Vserie.Active:=false;
+  CapacitySerie.Active:=true;
+  VoltSerie.Active:=false;
   cbCap.Enabled:=false;
   InitMP(mp);
   try
     inlist.LoadFromStream(logdat);
-    txtProtocol.Lines.Add(rsVType+'Yuneec Breeze');
-    txtProtocol.Lines.Add(rsCells+IntToStr(mp.nc)+'S');
+    mmoProtocol.Lines.Add(rsVType+'Yuneec Breeze');
+    mmoProtocol.Lines.Add(rsCells+IntToStr(mp.nc)+'S');
     sar:=inlist[10].Split(sep);
     mp.t:=ZeitToDT(sar[0], 7);
-    txtProtocol.Lines.Add(rsZeit+FormatDateTime(vzf, mp.t));
+    mmoProtocol.Lines.Add(rsZeit+FormatDateTime(vzf, mp.t));
     for i:=10 to inlist.Count-1 do begin             {Daten auswerten}
       sar:=inlist[i].Split(sep);
       mp.t:=ZeitToDT(sar[0], 7);
       mp.v:=StrToIntDef(sar[21], 0)/2.55;
       fm:=StrToIntDef(sar[14], 1);
-      CSerie.AddXY(mp.t, mp.v);                      {Capacity only}
+      CapacitySerie.AddXY(mp.t, mp.v);                      {Capacity only}
       if InFlight(7, fm) then
         mp.flt:=true;
     end;
     lineUmin.Position:=lipomin*3;
-    txtProtocol.Lines.Add(rsEZeit+FormatDateTime(vzf, mp.t));
-    txtProtocol.Lines.Add('');
+    mmoProtocol.Lines.Add(rsEZeit+FormatDateTime(vzf, mp.t));
+    mmoProtocol.Lines.Add('');
     if not mp.flt then
-      txtProtocol.Lines.Add(rsNoFlight);
+      mmoProtocol.Lines.Add(rsNoFlight);
   finally
     inlist.Free;
+  end;
+end;
+
+procedure TForm1.SelfDef(logdat: TMemoryStream);     {Frei definiertes Format}
+var
+  inlist: TStringList;
+  ddl, dsep: char;
+  i, p, t, v, n, f, z: integer;
+  zform: string;
+  sar: TStringArray;
+  mp, pmp: TMesspkt;
+
+begin
+  inlist:=TStringList.Create;
+  ddl:=DefaultFormatSettings.DecimalSeparator;       {Dezimaltrenner speichern}
+  InitMP(mp);
+  InitMP(pmp);
+  mp.flt:=true;                                      {immer gültiger Flug}
+  mp.nc:=2;
+  Screen.Cursor:=crHourGlass;
+  try
+    inlist.LoadFromFile(Application.Location+fdefs);
+    if inlist.Count>8 then begin                     {Zuordnung der Struktur}
+      dsep:=inlist[0][1];                            {Datentrennzeichen}
+      DefaultFormatSettings.DecimalSeparator:=inlist[1][1];
+      p:=StrToIntDef(inlist[2], 1);                  {Zeilennummer Daten}
+      n:=StrToIntDef(inlist[3], 2);                  {Anzahl Spalten}
+      zform:=trim(inlist[4]);                        {Zeitformat}
+      t:=StrToIntDef(inlist[5], 0);                  {Index Zeit}
+      z:=StrToIntDef(inlist[6], 4);                  {Anzahl LiPo Zellen, default 4S}
+      f:=StrToIntDef(inlist[7], 1);                  {Faktor Spannung}
+      v:=StrToIntDef(inlist[8], 1);                  {Index Spannung}
+
+      inlist.LoadFromStream(logdat);                 {Daten laden}
+      if inlist.Count>(20+p) then begin
+        sar:=inlist[p].Split(dsep);
+        if (p>0) and
+           (z>0) and
+           (high(sar)>=n) then begin                 {Plausichecks}
+          mmoProtocol.Lines.Add(rsFormatDef);
+          mmoProtocol.Lines.Add('');
+          for i:=p to inlist.Count-1 do begin
+            sar:=inlist[i].Split(dsep);
+            mp.t:=ScanDateTime(zform, sar[t]);
+            mp.v:=StrToFloatDef(sar[v], 0)*f;        {Voltage * Faktor}
+            case rgBatt.ItemIndex of
+              0: mp.c:=VtoProzY(mp);
+              1: mp.c:=VtoProzRC(mp);
+            end;
+            mpAnalyse(mp, pmp);
+          end;
+          lineUmin.Position:=lipomin*z;              {LiPo Zellen}
+          mmoProtocol.Lines.Add(rsEZeit+FormatDateTime(zzf, mp.t));
+          mmoProtocol.Lines.Add('');
+
+          if mp.pid>1 then
+            mmoProtocol.Lines.Add(rsFDur+FormatDateTime('nn:ss', mp.t-mp.td)+'min');
+          inlist.Clear;
+          Bewertung(mp, inlist);
+          for i:=0 to inlist.Count-1 do
+            mmoProtocol.Lines.Add(inlist[i]);
+
+        end else
+          mmoProtocol.Lines.Add(errUnknown);
+      end else
+        mmoProtocol.Lines.Add(rsNoData);
+
+    end else
+      mmoProtocol.Lines.Add(errUnknown);
+  finally
+    inlist.Free;
+    DefaultFormatSettings.DecimalSeparator:=ddl;     {Dezimaltrenner zurücksetzen}
+    Screen.Cursor:=crDefault;
   end;
 end;
 
@@ -799,11 +915,11 @@ begin
   mp.nc:=2;
   try
     inlist.LoadFromStream(logdat);
-    txtProtocol.Lines.Add(rsVType+'Hubsan');
-    txtProtocol.Lines.Add(rsCells+IntToStr(mp.nc)+'S');
+    mmoProtocol.Lines.Add(rsVType+'Hubsan');
+    mmoProtocol.Lines.Add(rsCells+IntToStr(mp.nc)+'S');
     sar:=inlist[10].Split(hubsep);
     mp.t:=ZeitToDT(sar[0], 9);
-    txtProtocol.Lines.Add(rsZeit+FormatDateTime(zzf, mp.t));
+    mmoProtocol.Lines.Add(rsZeit+FormatDateTime(zzf, mp.t));
 
     for i:=10 to inlist.Count-1 do begin             {Daten auswerten}
       sar:=inlist[i].Split(hubsep);
@@ -816,17 +932,17 @@ begin
       mpAnalyse(mp, pmp);
     end;
     lineUmin.Position:=lipomin*2;         {2S}
-    txtProtocol.Lines.Add(rsEZeit+FormatDateTime(zzf, mp.t));
-    txtProtocol.Lines.Add('');
+    mmoProtocol.Lines.Add(rsEZeit+FormatDateTime(zzf, mp.t));
+    mmoProtocol.Lines.Add('');
 
     if mp.pid>1 then
-      txtProtocol.Lines.Add(rsFDur+FormatDateTime('nn:ss', mp.t-mp.td)+'min');
+      mmoProtocol.Lines.Add(rsFDur+FormatDateTime('nn:ss', mp.t-mp.td)+'min');
 
 (*
     inlist.Clear;
     Bewertung(mp, inlist);                           {gibt immer Schrott (0sec) aus}
     for i:=0 to inlist.Count-1 do
-      txtProtocol.Lines.Add(inlist[i]);    *)
+      mmoProtocol.Lines.Add(inlist[i]);    *)
   finally
     inlist.Free;
   end;
@@ -860,22 +976,22 @@ begin
     mp.t:=ZeitToDT(sar[0], vt);
     case m of
       2: begin
-           txtProtocol.Lines.Add(rsVType+'Typhoon H+ / H3');
+           mmoProtocol.Lines.Add(rsVType+'Typhoon H+ / H3');
            mp.nc:=4;
          end;
       3: begin
-           txtProtocol.Lines.Add(rsVType+rsOldFW);
+           mmoProtocol.Lines.Add(rsVType+rsOldFW);
            mp.nc:=6;
          end;
     else
       begin
-        txtProtocol.Lines.Add(rsVType+vTypeToStr(vt));
+        mmoProtocol.Lines.Add(rsVType+vTypeToStr(vt));
         mp.nc:=GetS(vt);
       end;
     end;
 
-    txtProtocol.Lines.Add(rsCells+IntToStr(mp.nc)+'S');
-    txtProtocol.Lines.Add(rsZeit+FormatDateTime(vzf, mp.t));
+    mmoProtocol.Lines.Add(rsCells+IntToStr(mp.nc)+'S');
+    mmoProtocol.Lines.Add(rsZeit+FormatDateTime(vzf, mp.t));
 
     for i:=2 to inlist.Count-1 do begin              {Datensätze auswerten}
       sar:=inlist[i].Split(sep);
@@ -923,12 +1039,12 @@ begin
     end;
 
     lineUmin.Position:=lipomin*mp.nc;
-    txtProtocol.Lines.Add(rsEZeit+FormatDateTime(vzf, mp.t));
-    txtProtocol.Lines.Add('');
+    mmoProtocol.Lines.Add(rsEZeit+FormatDateTime(vzf, mp.t));
+    mmoProtocol.Lines.Add('');
     if outlist.count=0 then                          {Only one segment}
       Bewertung(mp, outlist);
     for i:=0 to outlist.Count-1 do begin             {Ergebnisse ausgeben}
-      txtProtocol.Lines.Add(outlist[i]);
+      mmoProtocol.Lines.Add(outlist[i]);
     end;
 
   finally
@@ -963,14 +1079,14 @@ var
   mp, pmp: TMesspkt;
   outlist: TStringList;
 
-  function GetIntFromBuf(const p, a: integer): uint64; {Position/Anzahl Bytes}
+  function GetIntFromBuf(const pos, numbytes: integer): uint64; {Position/Anzahl Bytes}
   var
     i: integer;
 
   begin
     result:=0;
-    for i:=0 to a-1 do begin
-      result:=result+dsbuf[lenfix+i+p]*(256**i);
+    for i:=0 to numbytes-1 do begin
+      result:=result+dsbuf[lenfix+i+pos]*(256**i);
     end;
   end;
 
@@ -1049,12 +1165,12 @@ begin
   toffs:=0;
   lts:=0;
   try
-    while (logdat.Position<(logdat.Size-lenfix)) do begin  {bis zum Ende der Datei}
+    while (logdat.Position<(logdat.Size-lenfixp-255)) do begin  {bis zum Ende der Datei}
       len:=0;                                        {Reset for error detection}
       try
         repeat
           b:=logdat.ReadByte;
-        until (b=MAVrecID) or (logdat.Position>(logdat.Size-lenfix));
+        until (b=MagicFD) or (logdat.Position>(logdat.Size-lenfixp));
         len:=logdat.ReadByte;                        {Länge Payload mit CRC}
         logdat.ReadBuffer(dsbuf, len+lenfixP-2);     {Lese Rest-Datensatz in den Buffer}
 
@@ -1066,7 +1182,7 @@ begin
           147: BattStatus;
           245: if InFlight(8, dsbuf[lenfix+1]) then  {MAV_landed_state 1-ground, 2..4-air}
                  mp.flt:=true;
-          30, 32, 33, 65: Timestamp;                 {ms}
+          30, 32, 33: Timestamp;                     {ms}
         end;
 
         if (begt=0) and (bg>0) then                  {Begin system time setzen}
@@ -1079,22 +1195,22 @@ begin
       end;
     end;
     lineUmin.Position:=lipomin*mp.nc;
-    txtProtocol.Lines.Add('');
-    txtProtocol.Lines.Add(rsVType+MAVtypeToStr(mavtype));
-    txtProtocol.Lines.Add(rsCells+IntToStr(mp.nc)+'S');
+    mmoProtocol.Lines.Add('');
+    mmoProtocol.Lines.Add(rsVType+MAVtypeToStr(mavtype));
+    mmoProtocol.Lines.Add(rsCells+IntToStr(mp.nc)+'S');
     if (begt>0) and (bg>begt) then begin             {Systemzeit vorhanden}
-      txtProtocol.Lines.Add(rsZeit+FormatDateTime(vzf, begt));
-      txtProtocol.Lines.Add(rsEZeit+FormatDateTime(vzf, bg));
+      mmoProtocol.Lines.Add(rsZeit+FormatDateTime(vzf, begt));
+      mmoProtocol.Lines.Add(rsEZeit+FormatDateTime(vzf, bg));
     end else begin                                   {Sensordatei, keine Systemzeit}
-      txtProtocol.Lines.Add(rsZeit+FormatDateTime(zzf, begts));
-      txtProtocol.Lines.Add(rsEZeit+FormatDateTime(zzf, mp.t));
+      mmoProtocol.Lines.Add(rsZeit+FormatDateTime(zzf, begts));
+      mmoProtocol.Lines.Add(rsEZeit+FormatDateTime(zzf, mp.t));
     end;
-    txtProtocol.Lines.Add('');
+    mmoProtocol.Lines.Add('');
 
     if outlist.count=0 then                          {Only one segment}
       Bewertung(mp, outlist);
     for i:=0 to outlist.Count-1 do
-      txtProtocol.Lines.Add(outlist[i]);
+      mmoProtocol.Lines.Add(outlist[i]);
   finally
     outlist.Free;
   end;
@@ -1102,56 +1218,79 @@ end;
 
 procedure TForm1.Zeichnen(const fn: string);         {Ein FlightLog auswerten}
 var
-  vtf: integer;                                      {Vehicle type from file}
+  vtf, w: integer;                                      {Vehicle type from file}
   logf: TMemoryStream;
-  ddl: char;
+  inlist: TStringList;
+  zform: string;
 
 begin
   Chart1.ZoomFull(true);
   rgBatt.Enabled:=true;
   cbCap.Enabled:=true;
   Caption:=rsAppName+tab2+ExtractFileName(fn);
-  txtProtocol.Lines.Clear;
-  txtProtocol.Lines.Add(fn);
-  txtProtocol.Lines.Add('');
-  CSerie.Active:=cbCap.Checked;
+  mmoProtocol.Lines.Clear;
+  mmoProtocol.Lines.Add(fn);
+  mmoProtocol.Lines.Add('');
+  CapacitySerie.Active:=cbCap.Checked;
   Panel2.Color:=Panel1.Color;
   Panel2.Caption:='';
+  Screen.Cursor:=crHourGlass;
+  logf:=TMemoryStream.Create;
+  DefaultFormatSettings.DecimalSeparator:='.';       {Yuneec Format}
 
   if FileSize(fn)>logminsize then begin
-    logf:=TMemoryStream.Create;
-    Screen.Cursor:=crHourGlass;
-    ddl:=DefaultFormatSettings.DecimalSeparator;     {Dezimaltrenner speichern}
-    DefaultFormatSettings.DecimalSeparator:='.';     {Yuneec Format}
-    VSerie.Clear;
-    CSerie.Clear;
+    VoltSerie.Clear;
+    CapacitySerie.Clear;
     lineUmin.Active:=false;
     lineVW1.Active:=false;
     lineVW2.Active:=false;
 
+    vtf:=0;
+    if FileExists(Application.Location+fdefs) then begin
+      inlist:=TStringList.Create;
+      try
+        inlist.LoadFromFile(Application.Location+fdefs);
+        if inlist.Count>8 then begin
+          zform:=trim(inlist[4]);
+          if (length(zform)>4) and
+              TryStrToInt(inlist[2], w) and          {Test if valid integer}
+              TryStrToInt(inlist[3], w) and
+              TryStrToInt(inlist[5], w) and
+              TryStrToInt(inlist[6], w) and
+              TryStrToInt(inlist[8], w) and
+              TryStrToInt(inlist[7], w) then         {Test voltage factor > 0}
+            if w>0 then
+              vtf:=99;                               {Self defined format}
+        end;
+      finally
+        inlist.Free;
+      end;
+    end;
+
     try
       logf.LoadFromFile(fn);
-      vtf:=CheckFileType(logf);                      {Vehicle type from file}
+      if vtf=0 then                                  {If not self-def try others}
+        vtf:=CheckFileType(logf);                    {Vehicle type from file}
       logf.Position:=0;
       case vtf of
-        0: txtProtocol.Lines.Add(errUnknown+tab1+rsNoAnal);
+        0: mmoProtocol.Lines.Add(errUnknown+tab1+rsNoAnal);
         1..3: YuneecLegacy(logf, vtf);
         7: BreezeDats(logf);
         8: MAVmsg(logf);
         9: H501Dats(logf);
+        99: SelfDef(logf);
       end;
       if vtf>0 then
         lineUmin.Active:=true;
 
     finally
-      DefaultFormatSettings.DecimalSeparator:=ddl;   {Original wiederherstellen}
       logf.Free;
       Screen.Cursor:=crDefault;
       Chart1.ZoomFull(true);
     end;
 
   end else
-    txtProtocol.Lines.Add(rsFileSize+tab1+rsNoData); {Datei zu klein zum Spielen}
+    mmoProtocol.Lines.Add(rsFileSize+tab1+rsNoData); {Datei zu klein zum Spielen}
 end;
 
 procedure TForm1.actOpenExecute(Sender: TObject);    {Ein FlightLog öffnen}
@@ -1161,8 +1300,8 @@ begin
   Panel2.Color:=Panel1.Color;
   Panel2.Caption:='';
   if OpenDialog.Execute then begin
-   dbg:=false;
-   Zeichnen(OpenDialog.FileName);
+    dbg:=false;
+    Zeichnen(OpenDialog.FileName);
   end else
     Caption:=rsAppName+tab2+AppVers;
 end;
